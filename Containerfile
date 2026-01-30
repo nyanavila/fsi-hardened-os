@@ -7,9 +7,6 @@ RUN mkdir -p /usr/lib/bootc/configs/
 # Copy your TOML blueprint into the image
 COPY fsi-server.toml /usr/lib/bootc/configs/fsi-server.toml
 
-# Enforce FIPS mode for FSI compliance
-RUN fips-mode-setup --enable
-
 # Install Mandatory Security Tooling
 RUN dnf -y install \
     openscap-scanner \
