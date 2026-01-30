@@ -25,6 +25,9 @@ compliance_scan:
   stage: test
   image: quay.io/podman/stable
   script:
+    # Authenticate to your project's local registry
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+
     - podman pull $IMAGE_TAG
     # Verify the FIPS config file actually exists in the image
     - podman run --rm $IMAGE_TAG ls /usr/lib/bootc/kargs.d/01-fips.toml
