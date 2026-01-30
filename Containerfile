@@ -1,22 +1,27 @@
-# Use the official bootable RHEL image
+# Use the official RHEL 9 bootable image
 FROM registry.redhat.io/rhel9/rhel-bootc:latest
 
-# Create the directory for bootc configuration drop-ins
+# 1. Setup Blueprint Configuration
+# We place the TOML in the specific directory bootc looks for
 RUN mkdir -p /usr/lib/bootc/configs/
-
-# Copy your TOML blueprint into the image
 COPY fsi-server.toml /usr/lib/bootc/configs/fsi-server.toml
 
-# Install Mandatory Security Tooling
+# 2. Install Mandatory Security & Audit Tooling
+# NOTE: If your build fails here, ensure your GitLab Runner is 
+# registered to Red Hat or has the subscription-manager plugin enabled.
 RUN dnf -y install \
     openscap-scanner \
     scap-security-guide \
     crypto-policies-scripts \
     && dnf clean all
 
-# Lockdown SSH (No root login, no empty passwords)
+# 3. User Space Hardening
+# This sets the libraries to FIPS mode without touching the bootloader
+RUN update-crypto-policies --set FIPS
+
+# 4. SSH Compliance Hardening
 RUN sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config && \
     sed -i 's/PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config
 
-# Set Crypto Policy to FIPS-compliant levels
-RUN update-crypto-policies --set FIPS
+# 5. Finalize: Ensure the image knows it is a RHEL system
+RUN echo "FSI Hardened RHEL Image v1.0" > /etc/fsi-release
