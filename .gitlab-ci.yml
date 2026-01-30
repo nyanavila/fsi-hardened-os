@@ -6,15 +6,17 @@ stages:
 variables:
   # Using GitLab's built-in registry
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
-
 build_os:
   stage: build
   image: quay.io/podman/stable
   script:
-    - podman login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    # Login to Red Hat Registry first
+    - podman login -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
+    # Login to your local GitLab registry so you can push
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    # Now the build will work
     - podman build -t $IMAGE_TAG .
     - podman push $IMAGE_TAG
-
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable
