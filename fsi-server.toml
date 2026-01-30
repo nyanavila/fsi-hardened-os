@@ -1,0 +1,38 @@
+name = "fsi-hardened-os"
+description = "Immutable FIPS-validated Banking Image"
+version = "0.0.1"
+
+# 1. ENFORCE KERNEL-LEVEL COMPLIANCE
+# This ensures the kernel itself boots into FIPS mode 
+# and redirects logs to the serial console for auditing.
+[customizations.kernel]
+append = "fips=1 console=ttyS0"
+
+# 2. SECURE USER MANAGEMENT
+# Lock the root account and create a dedicated admin with your hash.
+[[customizations.user]]
+name = "root"
+lock_password = true
+
+[[customizations.user]]
+name = "fsi-admin"
+description = "Audit-authorized Administrator"
+# Replace the hash below with the output from: openssl passwd -6 "YourPassword"
+password = "$6$vL2p8G..." 
+groups = ["wheel"]
+
+# 3. COMPLIANCE FILESYSTEM LAYOUT (STIG/PCI-DSS)
+# Financial standards require separate partitions for variable data 
+# to prevent disk-exhaustion attacks from crashing the OS.
+[[customizations.filesystem]]
+mountpoint = "/var"
+size = "10GB"
+
+[[customizations.filesystem]]
+mountpoint = "/home"
+size = "5GB"
+
+# 4. SERVICES
+# Ensure the SSH daemon is enabled by default for remote management.
+[customizations.services]
+enabled = ["sshd"]
