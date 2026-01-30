@@ -1,6 +1,6 @@
 stages:
   - build
-  - test
+  - security_scan
   - sign
 
 variables:
