@@ -18,7 +18,7 @@ lock_password = true
 name = "fsi-admin"
 description = "Audit-authorized Administrator"
 # Replace the hash below with the output from: openssl passwd -6 "YourPassword"
-password = "$6$vL2p8G..." 
+password = "$6$0m8aoBoDPecLXVFc$Eq9EIX4LnmAL3SwHOjBFObp9VXfgdTbEym3uXgXsz/u9VtBjOS62zgE/xL6di3AicCYvb1vB.mvzv0S..Yv6E0" 
 groups = ["wheel"]
 
 # 3. COMPLIANCE FILESYSTEM LAYOUT (STIG/PCI-DSS)
