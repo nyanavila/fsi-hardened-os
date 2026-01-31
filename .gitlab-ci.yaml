@@ -6,7 +6,7 @@ stages:
 variables:
   # This creates a unique tag for every single build
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
-
+- echo "Pulling from $CI_REGISTRY as $CI_REGISTRY_USER for image $IMAGE_TAG"
 # 1. BUILD: The "Manufacturing" Stage
 build_os:
   stage: build
