@@ -24,6 +24,8 @@ build_os:
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable
+  variables:
+    STORAGE_DRIVER: "vfs"
   script:
     # 1. Login to the GitLab Registry so this job has permission to pull
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
