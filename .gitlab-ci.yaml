@@ -31,8 +31,8 @@ compliance_scan:
   script:
     # 1. Force Podman to create a fresh auth file with the Job Token
     # Using --authfile ensures the Authorization header is stored and sent to /jwt/auth
-    - podman login --authfile $REGISTRY_AUTH_FILE -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
-    
+    #- podman login --authfile $REGISTRY_AUTH_FILE -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - podman login --authfile $REGISTRY_AUTH_FILE -u <YOUR_USERNAME> -p "$MY_PAT" $CI_REGISTRY
     # 2. Use the authfile explicitly during the pull
     - podman pull --authfile $REGISTRY_AUTH_FILE $IMAGE_TAG
     
