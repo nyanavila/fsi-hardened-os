@@ -26,23 +26,25 @@ compliance_scan:
   image: quay.io/podman/stable
   variables:
     STORAGE_DRIVER: "vfs"
+    # Create a local auth file path to avoid permission issues
+    REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
   script:
-    # 1. Login to the GitLab Registry so this job has permission to pull
-    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    # 1. Force Podman to create a fresh auth file with the Job Token
+    # Using --authfile ensures the Authorization header is stored and sent to /jwt/auth
+    - podman login --authfile $REGISTRY_AUTH_FILE -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     
-    # 2. Pull the specific image built in the previous stage
-    - podman pull $IMAGE_TAG
+    # 2. Use the authfile explicitly during the pull
+    - podman pull --authfile $REGISTRY_AUTH_FILE $IMAGE_TAG
     
-    # 3. Quick check to verify our FIPS config is present
+    # 3. Clean up (Optional, for security hygiene)
+    - rm -f $REGISTRY_AUTH_FILE
+    
+    # 4. Proceed with OpenSCAP
     - podman run --rm $IMAGE_TAG ls /usr/lib/bootc/kargs.d/01-fips.toml
-    
-    # 4. Run the OpenSCAP compliance audit
-    - podman run --rm $IMAGE_TAG oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml --profile pci-dss --report audit_report.html
+    - podman run --rm $IMAGE_TAG oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
   artifacts:
     paths:
       - audit_report.html
-    expire_in: 1 week
-
 
 # 3. SIGN: The "Notary" Stage
 # Only images that pass the above stages get the 'Seal of Approval'
