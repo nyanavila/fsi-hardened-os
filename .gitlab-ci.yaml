@@ -25,23 +25,25 @@ compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable
   variables:
+    # Use vfs driver if running in a non-privileged container environment
     STORAGE_DRIVER: "vfs"
-    # Create a local auth file path to avoid permission issues
+    # Redirect auth file to a writable project directory
     REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
   script:
-    # 1. Force Podman to create a fresh auth file with the Job Token
-    # Using --authfile ensures the Authorization header is stored and sent to /jwt/auth
-    #- podman login --authfile $REGISTRY_AUTH_FILE -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
-    - podman login --authfile $REGISTRY_AUTH_FILE -u <YOUR_USERNAME> -p "$MY_PAT" $CI_REGISTRY
-    # 2. Use the authfile explicitly during the pull
-    - podman pull --authfile $REGISTRY_AUTH_FILE $IMAGE_TAG
+    # 1. Login using the built-in CI_JOB_TOKEN for the current project
+    # This token has read access to the project's registry by default.
+    - echo "$CI_JOB_TOKEN" | podman login --authfile "$REGISTRY_AUTH_FILE" -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     
-    # 3. Clean up (Optional, for security hygiene)
-    - rm -f $REGISTRY_AUTH_FILE
+    # 2. Pull the image explicitly using the auth file
+    - podman pull --authfile "$REGISTRY_AUTH_FILE" "$IMAGE_TAG"
     
-    # 4. Proceed with OpenSCAP
-    - podman run --rm $IMAGE_TAG ls /usr/lib/bootc/kargs.d/01-fips.toml
-    - podman run --rm $IMAGE_TAG oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
+    # 3. Security Audit (OpenSCAP)
+    # Ensure the image is available locally for these runs
+    - podman run --rm "$IMAGE_TAG" ls /usr/lib/bootc/kargs.d/01-fips.toml
+    - podman run --rm "$IMAGE_TAG" oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
+    
+    # 4. Clean up authentication data
+    - rm -f "$REGISTRY_AUTH_FILE"
   artifacts:
     paths:
       - audit_report.html
