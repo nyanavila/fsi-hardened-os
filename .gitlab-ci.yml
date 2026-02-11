@@ -38,12 +38,15 @@ compliance_scan:
   script:
     - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
     
+    # Run the scan using a wildcard to find the correct CentOS 9 XML file
     - |
-      podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" \
+      podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" /bin/bash -c "
+      SCAP_FILE=\$(ls /usr/share/xml/scap/ssg/content/ssg-c*9-ds.xml | head -n 1)
+      echo \"Scanning with file: \$SCAP_FILE\"
       oscap-chroot / xccdf eval \
-      --profile pci-dss \
-      --report /reports/audit_report.html \
-      /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml || echo "Scan completed with findings"
+        --profile pci-dss \
+        --report /reports/audit_report.html \
+        \$SCAP_FILE" || echo "Scan completed with findings"
     # 2. Verification check
     - ls -lh audit_report.html
   artifacts:
