@@ -23,23 +23,22 @@ variables:
 build_os:
   stage: build
   image: quay.io/podman/stable:latest
-  before_script:
-    # Pre-emptively clean any existing storage
-    - podman system prune -a -f
-    - mkdir -p $PODMAN_RUN_DIR $PODMAN_TMPDIR
   script:
-    # Use the --authfile to ensure the session is captured without interaction
-    - podman login --authfile $REGISTRY_AUTH_FILE -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
-    - podman login --authfile $REGISTRY_AUTH_FILE -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    # Check if variables are actually present in the runner environment
+    - echo "Checking Registry Variables..."
+    - '[ -z "$RH_REGISTRY_USER" ] && echo "RH_REGISTRY_USER is MISSING" && exit 1'
     
-    # Pass the authfile to the build command so it can pull the base RHEL image
-    - |
-      podman build --no-cache --authfile $REGISTRY_AUTH_FILE \
+    # Use single quotes to prevent bash from interpreting the '|' in service accounts
+    # Use --authfile to ensure the token is stored correctly for the build step
+    - podman login --authfile $REGISTRY_AUTH_FILE -u '$RH_REGISTRY_USER' -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
+    
+    # Now pull and build using the RHEL base
+    - podman build --no-cache --authfile $REGISTRY_AUTH_FILE \
         --build-arg REDHAT_ORG_ID="$REDHAT_ORG_ID" \
         --build-arg REDHAT_ACTIVATION_KEY="$REDHAT_ACTIVATION_KEY" \
         -t "$IMAGE_TAG" \
         -f Containerfile.new .
-    - podman push "$IMAGE_TAG"
+
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
