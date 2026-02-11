@@ -9,6 +9,7 @@ RUN update-crypto-policies --no-reload --set FIPS
 # 3. Install Security & Compliance Tooling
 RUN dnf -y install \
     openscap-scanner \
+    openscap-utils \
     scap-security-guide \
     && dnf clean all
 
