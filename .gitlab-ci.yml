@@ -15,10 +15,10 @@ variables:
   # rather than the limited /var/lib/containers/storage
   PODMAN_RUN_DIR: "$CI_PROJECT_DIR/.podman_runtime"
   PODMAN_TMPDIR: "$CI_PROJECT_DIR/.podman_tmp"
-before_script:
+#before_script:
     # Aggressively clear local runner storage before starting
-    - podman system prune -a -f --volumes
-    - podman rmi -a -f || true  
+ #   - podman system prune -a -f --volumes
+  #  - podman rmi -a -f || true  
 build_os:
   stage: build
   image: quay.io/podman/stable:latest
