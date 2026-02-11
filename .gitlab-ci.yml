@@ -22,16 +22,21 @@ variables:
 build_os:
   stage: build
   image: quay.io/podman/stable:latest
-  before_script:
-    # Pre-emptively clean any existing storage
-    - podman system prune -a -f
-    - mkdir -p $PODMAN_RUN_DIR $PODMAN_TMPDIR
   script:
+    # 1. Login to Red Hat (to pull the FROM image)
+    - podman login -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASS" registry.redhat.io
+    
+    # 2. Login to GitLab (to push the final image)
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    # Adding --no-cache can help if the runner is recycling old layers
-    - podman build --no-cache -t "$IMAGE_TAG" -f Containerfile.new .
+    
+    # 3. Execute build with required arguments
+    - |
+      podman build --no-cache \
+        --build-arg REDHAT_ORG_ID="$REDHAT_ORG_ID" \
+        --build-arg REDHAT_ACTIVATION_KEY="$REDHAT_ACTIVATION_KEY" \
+        -t "$IMAGE_TAG" \
+        -f Containerfile.new .
     - podman push "$IMAGE_TAG"
-
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
