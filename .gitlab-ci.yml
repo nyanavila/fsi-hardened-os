@@ -11,12 +11,22 @@ variables:
   # Ensures auth persists correctly between commands
   REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
 
+  # Force Podman to use the project directory for temporary storage
+  # rather than the limited /var/lib/containers/storage
+  PODMAN_RUN_DIR: "$CI_PROJECT_DIR/.podman_runtime"
+  PODMAN_TMPDIR: "$CI_PROJECT_DIR/.podman_tmp"
+
 build_os:
   stage: build
   image: quay.io/podman/stable:latest
+  before_script:
+    # Pre-emptively clean any existing storage
+    - podman system prune -a -f
+    - mkdir -p $PODMAN_RUN_DIR $PODMAN_TMPDIR
   script:
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - podman build -t "$IMAGE_TAG" .
+    # Adding --no-cache can help if the runner is recycling old layers
+    - podman build --no-cache -t "$IMAGE_TAG" .
     - podman push "$IMAGE_TAG"
 
 compliance_scan:
