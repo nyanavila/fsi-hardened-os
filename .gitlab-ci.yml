@@ -19,19 +19,17 @@ variables:
     # Aggressively clear local runner storage before starting
  #   - podman system prune -a -f --volumes
   #  - podman rmi -a -f || true  
+
 build_os:
   stage: build
-  image: quay.io/podman/stable:latest
   script:
-    # 1. Login to Red Hat (to pull the FROM image)
-    - podman login -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
+    # Use the --authfile to ensure the session is captured without interaction
+    - podman login --authfile $REGISTRY_AUTH_FILE -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
+    - podman login --authfile $REGISTRY_AUTH_FILE -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     
-    # 2. Login to GitLab (to push the final image)
-    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    
-    # 3. Execute build with required arguments
+    # Pass the authfile to the build command so it can pull the base RHEL image
     - |
-      podman build --no-cache \
+      podman build --no-cache --authfile $REGISTRY_AUTH_FILE \
         --build-arg REDHAT_ORG_ID="$REDHAT_ORG_ID" \
         --build-arg REDHAT_ACTIVATION_KEY="$REDHAT_ACTIVATION_KEY" \
         -t "$IMAGE_TAG" \
