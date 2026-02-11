@@ -40,13 +40,12 @@ compliance_scan:
     
     # 1. Correct the SCAP content path and mount the current directory
     # The ':Z' flag is necessary for SELinux labeling on many runners
-    - podman run --rm 
-        -v "$(pwd):/reports:Z" 
-        "$IMAGE_TAG" oscap xccdf eval oscap-chroot / 
-        /usr/share/xml/scap/ssg/content/ssg-cs9-ds.xml /
-        --profile pci-dss /
-        --report /reports/audit_report.html || true
-        
+    - podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" \
+      oscap-chroot / \
+      xccdf eval \
+      --profile pci-dss \
+      --report /reports/audit_report.html \
+      /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml 
     # 2. Verification check
     - ls -lh audit_report.html
   artifacts:
