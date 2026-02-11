@@ -24,7 +24,7 @@ build_os:
   image: quay.io/podman/stable:latest
   script:
     # 1. Login to Red Hat (to pull the FROM image)
-    - podman login -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASS" registry.redhat.io
+    - podman login -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
     
     # 2. Login to GitLab (to push the final image)
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
