@@ -38,6 +38,7 @@ build_os:
         -t "$IMAGE_TAG" \
         -f Containerfile.new .
     - podman push "$IMAGE_TAG"
+    
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
