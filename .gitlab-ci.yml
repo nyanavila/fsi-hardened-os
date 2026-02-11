@@ -43,7 +43,7 @@ compliance_scan:
     - podman run --rm 
         -v "$(pwd):/reports:Z" 
         "$IMAGE_TAG" 
-        oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml 
+        oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-cs9-ds.xml 
         --profile pci-dss 
         --report /reports/audit_report.html || true
         
