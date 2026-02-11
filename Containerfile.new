@@ -1,0 +1,38 @@
+# Use the official RHEL 9 or 10 bootc image
+FROM registry.redhat.io/rhel9/rhel-bootc:latest
+
+# Define build arguments for subscription
+ARG REDHAT_ORG_ID
+ARG REDHAT_ACTIVATION_KEY
+
+# 1. Register, Install, and Unregister in a single layer
+RUN subscription-manager register \
+        --org=${REDHAT_ORG_ID} \
+        --activationkey=${REDHAT_ACTIVATION_KEY} && \
+    dnf -y install \
+        openscap-scanner \
+        openscap-utils \
+        scap-security-guide && \
+    subscription-manager unregister && \
+    dnf clean all
+
+# 2. Inject your FIPS and Hardening artifacts
+COPY 01-fips.toml /usr/lib/bootc/kargs.d/
+
+
+# 2. Configure User-space Crypto Policy
+RUN update-crypto-policies --no-reload --set FIPS
+
+# 3. Install Security & Compliance Tooling
+RUN dnf -y install \
+    openscap-scanner \
+    openscap-utils \
+    scap-security-guide \
+    && dnf clean all
+
+# 4. FSI Hardening: Lockdown SSH
+RUN sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+
+# 5. Inject our User/Filesystem Blueprint
+RUN mkdir -p /usr/lib/bootc/configs/
+COPY fsi-server.toml /usr/lib/bootc/configs/fsi-server.toml
