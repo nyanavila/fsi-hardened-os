@@ -42,9 +42,9 @@ compliance_scan:
     # The ':Z' flag is necessary for SELinux labeling on many runners
     - podman run --rm 
         -v "$(pwd):/reports:Z" 
-        "$IMAGE_TAG" 
-        oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-cs9-ds.xml 
-        --profile pci-dss 
+        "$IMAGE_TAG" oscap xccdf eval oscap-chroot / 
+        /usr/share/xml/scap/ssg/content/ssg-cs9-ds.xml /
+        --profile pci-dss /
         --report /reports/audit_report.html || true
         
     # 2. Verification check
