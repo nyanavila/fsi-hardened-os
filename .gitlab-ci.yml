@@ -1,7 +1,7 @@
 stages:
   - build
   - security_scan
-  - sign_os_image
+  - sign
 
 variables:
   # This creates a unique tag for every single build
