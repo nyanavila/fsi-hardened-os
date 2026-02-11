@@ -29,7 +29,7 @@ build_os:
   script:
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     # Adding --no-cache can help if the runner is recycling old layers
-    - podman build --no-cache -t "$IMAGE_TAG" -f Container.new .
+    - podman build --no-cache -t "$IMAGE_TAG" -f Containerfile.new .
     - podman push "$IMAGE_TAG"
 
 compliance_scan:
