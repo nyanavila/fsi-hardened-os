@@ -22,6 +22,11 @@ variables:
 
 build_os:
   stage: build
+  image: quay.io/podman/stable:latest
+  before_script:
+    # Pre-emptively clean any existing storage
+    - podman system prune -a -f
+    - mkdir -p $PODMAN_RUN_DIR $PODMAN_TMPDIR
   script:
     # Use the --authfile to ensure the session is captured without interaction
     - podman login --authfile $REGISTRY_AUTH_FILE -u "$RH_REGISTRY_USER" -p "$RH_REGISTRY_PASSWORD" registry.redhat.io
