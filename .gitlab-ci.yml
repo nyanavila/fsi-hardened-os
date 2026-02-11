@@ -1,0 +1,47 @@
+stages:
+  - build
+  - security_scan
+  - sign
+
+variables:
+  # This creates a unique tag for every single build
+  IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+  # Required for Podman on GitLab SaaS Shared Runners
+  STORAGE_DRIVER: "vfs"
+  # Ensures auth persists correctly between commands
+  REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
+
+build_os:
+  stage: build
+  image: quay.io/podman/stable:latest
+  script:
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - podman build -t "$IMAGE_TAG" .
+    - podman push "$IMAGE_TAG"
+
+compliance_scan:
+  stage: security_scan
+  image: quay.io/podman/stable:latest
+  script:
+    # Use --creds to bypass the "Fine-grained permissions" 403 error
+    - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
+    
+    # Verify FIPS and Security Standards
+    - podman run --rm "$IMAGE_TAG" ls /usr/lib/bootc/kargs.d/01-fips.toml
+    - podman run --rm "$IMAGE_TAG" oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
+  artifacts:
+    paths:
+      - audit_report.html
+    expire_in: 1 week
+
+sign_os_image:
+  stage: sign
+  image: alpine:latest
+  script:
+    - apk add --no-cache cosign
+    - echo "$COSIGN_KEY" > cosign.key
+    # Sign and push the signature back to GitLab
+    - cosign login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - cosign sign --key cosign.key --tlog-upload=false "$IMAGE_TAG"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
