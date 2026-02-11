@@ -6,7 +6,7 @@ stages:
 variables:
   # This creates a unique tag for every single build
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
-- echo "Pulling from $CI_REGISTRY as $CI_REGISTRY_USER for image $IMAGE_TAG"
+  #- echo "Pulling from $CI_REGISTRY as $CI_REGISTRY_USER for image $IMAGE_TAG"
 # 1. BUILD: The "Manufacturing" Stage
 build_os:
   stage: build
@@ -34,9 +34,9 @@ compliance_scan:
     # This token has read access to the project's registry by default.
     - echo "$CI_JOB_TOKEN" | podman login --authfile "$REGISTRY_AUTH_FILE" -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     
-    # 2. Pull the image explicitly using the auth file
-    - podman pull --authfile "$REGISTRY_AUTH_FILE" "$IMAGE_TAG"
-    
+  
+  - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" $IMAGE_TAG
+
     # 3. Security Audit (OpenSCAP)
     # Ensure the image is available locally for these runs
     - podman run --rm "$IMAGE_TAG" ls /usr/lib/bootc/kargs.d/01-fips.toml
