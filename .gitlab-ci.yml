@@ -7,7 +7,7 @@ variables:
   # This creates a unique tag for every single build
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
   # Required for Podman on GitLab SaaS Shared Runners
-  STORAGE_DRIVER: "vfs"
+  #STORAGE_DRIVER: "vfs"
   # Ensures auth persists correctly between commands
   REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
 
