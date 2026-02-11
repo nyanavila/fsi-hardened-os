@@ -4,60 +4,41 @@ stages:
   - sign
 
 variables:
-  # This creates a unique tag for every single build
   IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
-  #- echo "Pulling from $CI_REGISTRY as $CI_REGISTRY_USER for image $IMAGE_TAG"
-# 1. BUILD: The "Manufacturing" Stage
+  STORAGE_DRIVER: "vfs" # Required for nested containers on SaaS runners
+  REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
+
 build_os:
   stage: build
   image: quay.io/podman/stable
   script:
-    # Authenticate to your project's local registry
-    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    # Build the image using the Containerfile and the .toml files
-    - podman build -t $IMAGE_TAG .
-    # Push the "Golden Image" to the registry
-    - podman push $IMAGE_TAG
+    # Use CI_REGISTRY_USER/PASSWORD for the build stage (Standard)
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - podman build -t "$IMAGE_TAG" .
+    - podman push "$IMAGE_TAG"
 
-# 2. TEST: The "Audit" Stage
-# This ensures the image meets FSI security standards before it can be signed.
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable
-  variables:
-    # Use vfs driver if running in a non-privileged container environment
-    STORAGE_DRIVER: "vfs"
-    # Redirect auth file to a writable project directory
-    REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
   script:
-    # 1. Login using the built-in CI_JOB_TOKEN for the current project
-    # This token has read access to the project's registry by default.
-    - echo "$CI_JOB_TOKEN" | podman login --authfile "$REGISTRY_AUTH_FILE" -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # Use --creds directly to bypass common authfile persistence issues in 403 scenarios
+    - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
     
-  
-    - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" $IMAGE_TAG
-
-    # 3. Security Audit (OpenSCAP)
-    # Ensure the image is available locally for these runs
+    # Run security audits
     - podman run --rm "$IMAGE_TAG" ls /usr/lib/bootc/kargs.d/01-fips.toml
     - podman run --rm "$IMAGE_TAG" oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
-    
-    # 4. Clean up authentication data
-    - rm -f "$REGISTRY_AUTH_FILE"
   artifacts:
     paths:
       - audit_report.html
 
-# 3. SIGN: The "Notary" Stage
-# Only images that pass the above stages get the 'Seal of Approval'
 sign_os_image:
   stage: sign
   image: alpine:latest
   script:
-    # Install the cosign tool
     - apk add --no-cache cosign
-    # Use the private key stored in GitLab Variables to sign the image
     - echo "$COSIGN_KEY" > cosign.key
-    - cosign sign --key cosign.key --tlog-upload=false $IMAGE_TAG
+    # Cosign MUST also login to push the signature back to the registry
+    - cosign login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - cosign sign --key cosign.key --tlog-upload=false "$IMAGE_TAG"
   only:
-    - main # Only sign images built from the production (main) branch
+    - main
