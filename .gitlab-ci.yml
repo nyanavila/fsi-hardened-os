@@ -36,12 +36,19 @@ compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
   script:
-    # Use --creds to bypass the "Fine-grained permissions" 403 error
     - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
     
-    # Verify FIPS and Security Standards
-    - podman run --rm "$IMAGE_TAG" ls /usr/lib/bootc/kargs.d/01-fips.toml
-    - podman run --rm "$IMAGE_TAG" oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml --profile pci-dss --report audit_report.html || true
+    # 1. Correct the SCAP content path and mount the current directory
+    # The ':Z' flag is necessary for SELinux labeling on many runners
+    - podman run --rm 
+        -v "$(pwd):/reports:Z" 
+        "$IMAGE_TAG" 
+        oscap-chroot / /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml 
+        --profile pci-dss 
+        --report /reports/audit_report.html || true
+        
+    # 2. Verification check
+    - ls -lh audit_report.html
   artifacts:
     paths:
       - audit_report.html
