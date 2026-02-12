@@ -8,14 +8,7 @@ ARG REDHAT_ACTIVATION_KEY
 # 1. Register, Install, and Unregister in a single layer
 RUN subscription-manager register \
         --org=${REDHAT_ORG_ID} \
-        --activationkey=${REDHAT_ACTIVATION_KEY} && \
-    dnf -y install \
-        openscap-scanner \
-        openscap-utils \
-        scap-security-guide && \
-    subscription-manager unregister && \
-    dnf clean all
-
+        --activationkey=${REDHAT_ACTIVATION_KEY}
 # 2. Inject your FIPS and Hardening artifacts
 COPY 01-fips.toml /usr/lib/bootc/kargs.d/
 
