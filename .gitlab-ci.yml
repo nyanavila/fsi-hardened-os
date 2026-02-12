@@ -29,7 +29,7 @@ build_os:
     - if [ -z "${RH_REGISTRY_USER}" ]; then echo "RH_REGISTRY_USER is empty"; exit 1; fi
     
     # Use single quotes to escape special characters in Service Account names
-    - podman login -u '${RH_REGISTRY_USER}' -p "${RH_REGISTRY_PASSWORD}" registry.redhat.io
+    - podman login -u "${RH_REGISTRY_USER}" -p "${RH_REGISTRY_PASSWORD}" registry.redhat.io
     
     # Ensure the build uses the authenticated session to pull the RHEL base
     - podman build --no-cache \
