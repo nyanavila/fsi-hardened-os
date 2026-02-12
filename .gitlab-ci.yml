@@ -46,21 +46,30 @@ compliance_scan:
   script:
     - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
     
-    # Run the scan using a wildcard to find the correct CentOS 9 XML file
+    # Run a robust scan script inside the container
     - |
-      podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" /bin/bash -c "
-      SCAP_FILE=\$(ls /usr/share/xml/scap/ssg/content/ssg-c*9-ds.xml | head -n 1)
-      echo \"Scanning with file: \$SCAP_FILE\"
-      oscap-chroot / xccdf eval \
-        --profile pci-dss \
-        --report /reports/audit_report.html \
-        \$SCAP_FILE" || echo "Scan completed with findings"
-    # 2. Verification check
-    - ls -lh audit_report.html
+      podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" /bin/bash -c '
+        # 1. Dynamically find the DataStream file (tries RHEL 9, then CentOS 9)
+        SCAP_FILE=$(ls /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml 2>/dev/null || ls /usr/share/xml/scap/ssg/content/ssg-centos9-ds.xml 2>/dev/null)
+        
+        if [ -z "$SCAP_FILE" ]; then
+          echo "ERROR: SCAP content not found in /usr/share/xml/scap/ssg/content/"
+          ls -R /usr/share/xml/scap/ssg/content/
+          exit 1
+        fi
+        
+        echo "Using SCAP content: $SCAP_FILE"
+        
+        # 2. Execute the scan
+        oscap-chroot / "$SCAP_FILE" \
+          --profile pci-dss \
+          --report /reports/audit_report.html
+      '
   artifacts:
     paths:
       - audit_report.html
     expire_in: 1 week
+    when: always
 
 sign_os_image:
   stage: sign
