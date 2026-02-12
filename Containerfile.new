@@ -5,14 +5,16 @@ FROM registry.redhat.io/rhel9/rhel-bootc:latest
 ARG REDHAT_ORG_ID
 ARG REDHAT_ACTIVATION_KEY
 
-# 1. Register, Install, and Unregister in a single layer
+# Combine registration, installation, and cleanup
 RUN subscription-manager register \
-        --org=${REDHAT_ORG_ID} \
-        --activationkey=${REDHAT_ACTIVATION_KEY} && \
+        --org="${REDHAT_ORG_ID}" \
+        --activationkey="${REDHAT_ACTIVATION_KEY}" \
+        --force && \
     dnf -y install \
         openscap-scanner \
-        openscap-utils \
-        scap-security-guide && \
+        scap-security-guide \
+        bzip2 \
+        libxslt && \
     subscription-manager unregister && \
     dnf clean all
 
