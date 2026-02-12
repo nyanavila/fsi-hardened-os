@@ -32,11 +32,12 @@ build_os:
     - podman login -u "${RH_REGISTRY_USER}" -p "${RH_REGISTRY_PASSWORD}" registry.redhat.io
     
     # Ensure the build uses the authenticated session to pull the RHEL base
-    - podman build --no-cache \
-        --build-arg REDHAT_ORG_ID="$REDHAT_ORG_ID" \
-        --build-arg REDHAT_ACTIVATION_KEY="$REDHAT_ACTIVATION_KEY" \
-        -t "$IMAGE_TAG" \
-        -f Containerfile.new .
+    - |
+      podman build --no-cache \
+        --build-arg REDHAT_ORG_ID="${REDHAT_ORG_ID}" \
+        --build-arg REDHAT_ACTIVATION_KEY="${REDHAT_ACTIVATION_KEY}" \
+        -t "${IMAGE_TAG}" \
+        -f Containerfile.new . 
     - podman push "$IMAGE_TAG"    
 compliance_scan:
   stage: security_scan
