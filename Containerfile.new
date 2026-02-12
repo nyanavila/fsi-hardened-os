@@ -5,23 +5,25 @@ FROM registry.redhat.io/rhel9/rhel-bootc:latest
 ARG REDHAT_ORG_ID
 ARG REDHAT_ACTIVATION_KEY
 
-# 1. Register, Install, and Unregister in a single layer
+# Combine registration, installation, and cleanup into ONE layer
 RUN subscription-manager register \
-        --org=${REDHAT_ORG_ID} \
-        --activationkey=${REDHAT_ACTIVATION_KEY}
+        --org="${REDHAT_ORG_ID}" \
+        --activationkey="${REDHAT_ACTIVATION_KEY}" \
+        --force && \
+    dnf -y install \
+        openscap-scanner \
+        openscap-utils \
+        scap-security-guide && \
+    subscription-manager unregister && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
+
 # 2. Inject your FIPS and Hardening artifacts
 COPY 01-fips.toml /usr/lib/bootc/kargs.d/
 
 
 # 2. Configure User-space Crypto Policy
 RUN update-crypto-policies --no-reload --set FIPS
-
-# 3. Install Security & Compliance Tooling
-RUN dnf -y install \
-    openscap-scanner \
-    openscap-utils \
-    scap-security-guide \
-    && dnf clean all
 
 # 4. FSI Hardening: Lockdown SSH
 RUN sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
