@@ -25,6 +25,7 @@ build_os:
   stage: build
   image: quay.io/podman/stable:latest
   script:
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     # Diagnostic: This will fail the job immediately if variables are truly missing
     - if [ -z "${RH_REGISTRY_USER}" ]; then echo "RH_REGISTRY_USER is empty"; exit 1; fi
     
