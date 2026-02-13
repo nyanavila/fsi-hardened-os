@@ -65,33 +65,34 @@ compliance_scan:
     when: always
     expire_in: 1 week
 
-generate_bootable_disk:
+generate_disk:
   stage: disk_build
   image: quay.io/podman/stable:latest
-  services:
-    - name: docker:dind # Required if your runner needs privileged mode for loopback mounts
+  tags:
+    - privileged-fsi-runner
   variables:
-    # Ensures auth persists correctly between commands
-    REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
-    # Target architecture (amd64) and output format
-    DISK_TYPE: qcow2 
+    # Explicitly set the auth file path within the project workspace
+    REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/containers-auth.json"
   script:
     - mkdir -p ./output
-    - echo "Converting OCI Image to Bootable $DISK_TYPE..."
     
-    # We run bootc-image-builder as a container. 
-    # It requires --privileged to handle disk partitioning.
+    # 1. Generate the .json file by logging in
+    - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    
+    # 2. Verify the file actually exists before mounting
+    - if [ ! -f "$REGISTRY_AUTH_FILE" ]; then echo "Auth file missing!"; exit 1; fi
+    
+    # 3. Mount using the absolute path
+    # bootc-image-builder expects the auth file at /root/.docker/config.json
     - |
-      podman run \
-        --rm \
-        --privileged \
+      podman run --privileged --rm \
+        -v /dev:/dev \
         -v "$(pwd)/output:/output:Z" \
         -v "$REGISTRY_AUTH_FILE:/root/.docker/config.json:ro" \
         quay.io/centos-bootc/bootc-image-builder:latest \
-        --type $DISK_TYPE \
+        --type qcow2 \
         --local \
-        $IMAGE_TAG
-        
+        $IMAGE_TAG     
     - mv ./output/qcow2/disk.qcow2 ./fsi-hardened-v1.qcow2
   artifacts:
     paths:
