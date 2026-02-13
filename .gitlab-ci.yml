@@ -68,8 +68,8 @@ compliance_scan:
 generate_disk:
   stage: disk_build
   image: quay.io/podman/stable:latest
-  tags:
-    - privileged-fsi-runner
+  #tags:
+   # - privileged-fsi-runner
   variables:
     # Explicitly set the auth file path within the project workspace
     REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/containers-auth.json"
