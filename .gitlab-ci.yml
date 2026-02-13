@@ -64,12 +64,15 @@ compliance_scan:
       - reports/audit_report.html
     when: always
     expire_in: 1 week
+
 generate_bootable_disk:
   stage: disk_build
   image: quay.io/podman/stable:latest
   services:
     - name: docker:dind # Required if your runner needs privileged mode for loopback mounts
   variables:
+    # Ensures auth persists correctly between commands
+    REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/.auth.json"
     # Target architecture (amd64) and output format
     DISK_TYPE: qcow2 
   script:
