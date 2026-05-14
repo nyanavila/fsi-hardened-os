@@ -16,10 +16,10 @@ variables:
   # rather than the limited /var/lib/containers/storage
   PODMAN_RUN_DIR: "$CI_PROJECT_DIR/.podman_runtime"
   PODMAN_TMPDIR: "$CI_PROJECT_DIR/.podman_tmp"
-#before_script:
+before_script:
     # Aggressively clear local runner storage before starting
- #   - podman system prune -a -f --volumes
-  #  - podman rmi -a -f || true  
+    - podman system prune -a -f --volumes
+    - podman rmi -a -f || true  
 
 
 build_os:
@@ -30,7 +30,7 @@ build_os:
     # Diagnostic: This will fail the job immediately if variables are truly missing
     - if [ -z "${RH_REGISTRY_USER}" ]; then echo "RH_REGISTRY_USER is empty"; exit 1; fi
     - echo "Attempting login with user ${RH_REGISTRY_USER}"
-    - echo "${RH_REGISTRY_PASSWORD}" | podman login -u "${RH_REGISTRY_USER}" --password-stdin registry.redhat.io
+    #- echo "${RH_REGISTRY_PASSWORD}" | podman login -u "${RH_REGISTRY_USER}" --password-stdin registry.redhat.io
     # Use single quotes to escape special characters in Service Account names
     - podman login -u="${RH_REGISTRY_USER}" -p="${RH_REGISTRY_PASSWORD}" registry.redhat.io
     
@@ -41,9 +41,7 @@ build_os:
         --build-arg REDHAT_ACTIVATION_KEY="${REDHAT_ACTIVATION_KEY}" \
         -t "${IMAGE_TAG}" \
         -f Containerfile.new . 
-    - podman push "$IMAGE_TAG" 
-  before_script:
-    - podman system prune -a -f --volumes   
+    - podman push "$IMAGE_TAG"  
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
