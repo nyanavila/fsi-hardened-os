@@ -38,15 +38,29 @@ compliance_scan:
   script:
     - podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
     
-    # Run the scan using a wildcard to find the correct CentOS 9 XML file
+    # We run the scan INSIDE the target image. 
+    # This ensures the scanner has direct access to the rootfs it is auditing.
     - |
       podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" /bin/bash -c "
-      SCAP_FILE=\$(ls /usr/share/xml/scap/ssg/content/ssg-c*9-ds.xml | head -n 1)
-      echo \"Scanning with file: \$SCAP_FILE\"
-      oscap-chroot / xccdf eval \
-        --profile pci-dss \
-        --report /reports/audit_report.html \
-        \$SCAP_FILE" || echo "Scan completed with findings"
+        SCAP_FILE=\$(ls /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml 2>/dev/null || ls /usr/share/xml/scap/ssg/content/ssg-c9-ds.xml | head -n 1)
+        echo \"Scanning with file: \$SCAP_FILE\"
+        oscap xccdf eval \
+          --profile pci-dss \
+          --report /reports/audit_report.html \
+          \$SCAP_FILE" || echo "Scan completed with findings (Exit code expected for FSI non-compliance)"
+  #script:
+    
+    #- podman pull --creds "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" "$IMAGE_TAG"
+    
+    # Run the scan using a wildcard to find the correct CentOS 9 XML file
+    #- |
+    #  podman run --rm -v "$(pwd):/reports:Z" "$IMAGE_TAG" /bin/bash -c "
+    #  SCAP_FILE=\$(ls /usr/share/xml/scap/ssg/content/ssg-c*9-ds.xml | head -n 1)
+    #  echo \"Scanning with file: \$SCAP_FILE\"
+    #  oscap-chroot / xccdf eval \
+    #    --profile pci-dss \
+    #    --report /reports/audit_report.html \
+    #    \$SCAP_FILE" || echo "Scan completed with findings"
     # 2. Verification check
     - ls -lh audit_report.html
   artifacts:
