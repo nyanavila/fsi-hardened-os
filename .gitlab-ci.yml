@@ -64,34 +64,27 @@ compliance_scan:
       - reports/audit_report.html
     when: always
     expire_in: 1 week
-
 generate_disk:
   stage: disk_build
   image: quay.io/podman/stable:latest
-  #tags:
-   # - privileged-fsi-runner
   variables:
-    # Explicitly set the auth file path within the project workspace
     REGISTRY_AUTH_FILE: "$CI_PROJECT_DIR/containers-auth.json"
   script:
     - mkdir -p ./output
-    
-    # 1. Generate the .json file by logging in
     - podman login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     
-    # 2. Verify the file actually exists before mounting
-    - if [ ! -f "$REGISTRY_AUTH_FILE" ]; then echo "Auth file missing!"; exit 1; fi
+    # 1. Pull the image to the local runner storage first
+    - podman pull "$IMAGE_TAG"
     
-    # 3. Mount using the absolute path
-    # bootc-image-builder expects the auth file at /root/.docker/config.json
+    # 2. Run the builder with the STORAGE MOUNT
     - |
       podman run --privileged --rm \
         -v /dev:/dev \
+        -v /var/lib/containers/storage:/var/lib/containers/storage \
         -v "$(pwd)/output:/output:Z" \
         -v "$REGISTRY_AUTH_FILE:/root/.docker/config.json:ro" \
         quay.io/centos-bootc/bootc-image-builder:latest \
         --type qcow2 \
-        --local \
         $IMAGE_TAG     
     - mv ./output/qcow2/disk.qcow2 ./fsi-hardened-v1.qcow2
   artifacts:
