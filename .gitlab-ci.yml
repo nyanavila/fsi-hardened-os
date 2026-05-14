@@ -41,7 +41,9 @@ build_os:
         --build-arg REDHAT_ACTIVATION_KEY="${REDHAT_ACTIVATION_KEY}" \
         -t "${IMAGE_TAG}" \
         -f Containerfile.new . 
-    - podman push "$IMAGE_TAG"    
+    - podman push "$IMAGE_TAG" 
+  before_script:
+    - podman system prune -a -f --volumes   
 compliance_scan:
   stage: security_scan
   image: quay.io/podman/stable:latest
