@@ -32,7 +32,7 @@ build_os:
     - echo "Attempting login with user ${RH_REGISTRY_USER}"
     - echo "${RH_REGISTRY_PASSWORD}" | podman login -u "${RH_REGISTRY_USER}" --password-stdin registry.redhat.io
     # Use single quotes to escape special characters in Service Account names
-    - podman login -u "${RH_REGISTRY_USER}" -p "${RH_REGISTRY_PASSWORD}" registry.redhat.io
+    - podman login -u="${RH_REGISTRY_USER}" -p="${RH_REGISTRY_PASSWORD}" registry.redhat.io
     
     # Ensure the build uses the authenticated session to pull the RHEL base
     - |
