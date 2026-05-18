@@ -5,14 +5,15 @@ on:
     branches: [ "main" ]
 
 env:
-  IMAGE_TAG: ghcr.io/${{ github.repository }}:latest
+  IMAGE_TAG: quay.io/nyanavila/fsi-hardened-os:latest
+  # Force Podman to write credentials to a specific, accessible path
+  AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
   iso-factory:
     runs-on: self-hosted
     permissions:
       contents: read
-      packages: write
     
     steps:
       - name: Checkout Repository Source
@@ -22,17 +23,20 @@ jobs:
         run: |
           sudo podman system prune -a -f --volumes
           sudo rm -rf ./reports ./output
+          # Remove any stale auth files from previous runs
+          sudo rm -f $AUTH_FILE
 
       - name: Authenticate to Registries
         run: |
-          # Use standard sudo podman login; it saves directly to /root/.docker/config.json automatically
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
-          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }} " --password-stdin
+          # Use the env variable to force the token location for both logins
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
 
       - name: Build Hardened Bootc Image
         run: |
-          sudo podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
-          sudo podman push $IMAGE_TAG
+          # Pass the auth file context to the build and push steps
+          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
+          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman push $IMAGE_TAG
 
       - name: Pre-Boot Compliance Scan (Digital Autopsy)
         run: |
@@ -46,14 +50,14 @@ jobs:
       - name: Compile Bootable ISO Artifact
         run: |
           mkdir -p output
-          sudo podman pull $IMAGE_TAG
+          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman pull $IMAGE_TAG
           
-          # Pass root's native config.json directly into the builder container
+          # Mount our explicitly generated workspace auth file directly into the expected location inside the builder
           sudo podman run --privileged --rm \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
-            -v "/root/.docker/config.json:/root/.docker/config.json:ro" \
+            -v "$AUTH_FILE:/root/.docker/config.json:ro" \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type iso \
             $IMAGE_TAG
