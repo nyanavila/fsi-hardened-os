@@ -5,8 +5,9 @@ on:
     branches: [ "main" ]
 
 env:
+  # The unified image tag targeting your Quay.io repository
   IMAGE_TAG: quay.io/nyanavila/fsi-hardened-os:latest
-  # Force Podman to write credentials to a specific, accessible path
+  # Explicitly pathing the auth file into your runner's workspace directory
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
@@ -23,20 +24,19 @@ jobs:
         run: |
           sudo podman system prune -a -f --volumes
           sudo rm -rf ./reports ./output
-          # Remove any stale auth files from previous runs
           sudo rm -f $AUTH_FILE
 
       - name: Authenticate to Registries
         run: |
-          # Use sudo -E (Preserve Environment) to allow passing AUTH_FILE down to Podman safely
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
-          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
+          # Passing the authfile directly as a CLI flag bypasses sudo environment restrictions
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin --authfile=$AUTH_FILE
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin --authfile=$AUTH_FILE
 
       - name: Build Hardened Bootc Image
         run: |
-          # Apply the same sudo -E flag for building and pushing
-          sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
-          sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman push $IMAGE_TAG
+          # Build and push utilizing the verified local token file
+          sudo podman build --no-cache --authfile=$AUTH_FILE -t $IMAGE_TAG -f Containerfile.new .
+          sudo podman push --authfile=$AUTH_FILE $IMAGE_TAG
 
       - name: Pre-Boot Compliance Scan (Digital Autopsy)
         run: |
@@ -50,9 +50,9 @@ jobs:
       - name: Compile Bootable ISO Artifact
         run: |
           mkdir -p output
-          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman pull $IMAGE_TAG
+          sudo podman pull --authfile=$AUTH_FILE $IMAGE_TAG
           
-          # Mount our explicitly generated workspace auth file directly into the expected location inside the builder
+          # Mount the explicitly generated workspace auth file directly into the expected location inside the builder
           sudo podman run --privileged --rm \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
