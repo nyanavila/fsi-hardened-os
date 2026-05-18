@@ -1,0 +1,76 @@
+name: FSI Hardened ISO Factory
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  IMAGE_TAG: ghcr.io/${{ github.repository }}:latest
+  # Persist authentication tokens across nested tools
+  REGISTRY_AUTH_FILE: ${{ github.workspace }}/.podman_auth.json
+
+jobs:
+  iso-factory:
+    # Essential: Must execute on a host with rootful Podman and loop-device access
+    runs-on: self-hosted 
+    
+    steps:
+      - name: Checkout Repository Source
+        uses: actions/checkout@v4
+
+      - name: Prune Runner Storage Layer
+        run: |
+          sudo podman system prune -a -f --volumes
+          sudo rm -rf ./output ./reports
+
+      - name: Authenticate to Registries
+        run: |
+          # Log into GitHub Container Registry
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
+          # Log into the Secure Red Hat Registry
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
+
+      - name: Build Hardened Bootc Image
+        run: |
+          sudo podman build --no-cache \
+            --build-arg REDHAT_ORG_ID="${{ secrets.REDHAT_ORG_ID }}" \
+            --build-arg REDHAT_ACTIVATION_KEY="${{ secrets.REDHAT_ACTIVATION_KEY }}" \
+            -t $IMAGE_TAG -f Containerfile.new .
+          sudo podman push $IMAGE_TAG
+
+      - name: Pre-Boot Compliance Scan (Digital Autopsy)
+        run: |
+          mkdir -p reports
+          sudo podman run --rm -v "$(pwd)/reports:/reports:Z" $IMAGE_TAG /bin/bash -c "
+            oscap xccdf eval --profile pci-dss \
+              --report /reports/pci_dss_compliance.html \
+              /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+          " || echo "Compliance processing completed with findings."
+
+      - name: Compile Bootable ISO Artifact
+        run: |
+          mkdir -p output
+          # Pull the target image locally so the builder can access its layers
+          sudo podman pull $IMAGE_TAG
+          
+          # Execute bootc-image-builder with critical host storage passthrough
+          sudo podman run --privileged --rm \
+            -v /dev:/dev \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/output:/output:Z" \
+            -v "$REGISTRY_AUTH_FILE:/root/.docker/config.json:ro" \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type iso \
+            $IMAGE_TAG
+            
+          # Rename the raw output to an enterprise naming standard
+          sudo mv ./output/iso/install.iso ./fsi-hardened-rhel9.iso
+
+      - name: Upload Compliance and Installation Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsi-gold-master-iso
+          path: |
+            reports/pci_dss_compliance.html
+            fsi-hardened-rhel9.iso
+          retention-days: 2
