@@ -58,8 +58,13 @@ jobs:
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type iso \
             $IMAGE_TAG
-            
-          sudo mv ./output/iso/install.iso ./fsi-hardened-rhel9.iso
+
+          # DYNAMIC FIX: Find any ISO generated anywhere inside the output folder and move it safely
+          find ./output -name "*.iso" -exec mv {} ./fsi-hardened-rhel9.iso \;
+          
+          # Verification check for the demo log visibility
+          ls -lh ./fsi-hardened-rhel9.iso
+          #sudo mv ./output/iso/install.iso ./fsi-hardened-rhel9.iso
 
       - name: Upload Compliance and Installation Artifacts
         uses: actions/upload-artifact@v4
