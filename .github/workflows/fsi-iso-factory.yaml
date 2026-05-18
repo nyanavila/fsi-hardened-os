@@ -61,6 +61,9 @@ jobs:
 
           # DYNAMIC FIX: Find any ISO generated anywhere inside the output folder and move it safely
           find ./output -name "*.iso" -exec mv {} ./fsi-hardened-rhel9.iso \;
+         
+          # FIX: Reclaim ownership of the files from root so GitHub Actions can manage them
+          sudo chown -R $(id -u):$(id -g) ./fsi-hardened-rhel9.iso ./output
           
           # Verification check for the demo log visibility
           ls -lh ./fsi-hardened-rhel9.iso
