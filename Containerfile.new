@@ -4,7 +4,7 @@ FROM registry.redhat.io/rhel9/rhel-bootc:latest
 # Define build arguments for subscription
 ARG REDHAT_ORG_ID
 ARG REDHAT_ACTIVATION_KEY
-
+LABEL "Testing the rhel9 runner"
 # Combine registration, installation, and cleanup into ONE layer
 RUN subscription-manager register \
         --org="${REDHAT_ORG_ID}" \
