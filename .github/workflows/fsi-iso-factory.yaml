@@ -28,15 +28,15 @@ jobs:
 
       - name: Authenticate to Registries
         run: |
-          # Use the env variable to force the token location for both logins
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
-          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
+          # Use sudo -E (Preserve Environment) to allow passing AUTH_FILE down to Podman safely
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
 
       - name: Build Hardened Bootc Image
         run: |
-          # Pass the auth file context to the build and push steps
-          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
-          sudo REGISTRY_AUTH_FILE=$AUTH_FILE podman push $IMAGE_TAG
+          # Apply the same sudo -E flag for building and pushing
+          sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
+          sudo -E REGISTRY_AUTH_FILE=$AUTH_FILE podman push $IMAGE_TAG
 
       - name: Pre-Boot Compliance Scan (Digital Autopsy)
         run: |
