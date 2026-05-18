@@ -5,9 +5,8 @@ on:
     branches: [ "main" ]
 
 env:
-  # The unified image tag targeting your Quay.io repository
-  IMAGE_TAG: quay.io/nyanavila/fsi-hardened-os:latest
-  # Explicitly pathing the auth file into your runner's workspace directory
+  # FIXED: Pointing to your exact 'navila' Quay namespace
+  IMAGE_TAG: quay.io/navila/fsi-hardened-os:latest
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
@@ -28,13 +27,12 @@ jobs:
 
       - name: Authenticate to Registries
         run: |
-          # Passing the authfile directly as a CLI flag bypasses sudo environment restrictions
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin --authfile=$AUTH_FILE
+          # FIXED: Hardcoded your exact 'navila' robot account username string
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+github_robot" --password-stdin --authfile=$AUTH_FILE
           echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin --authfile=$AUTH_FILE
 
       - name: Build Hardened Bootc Image
         run: |
-          # Build and push utilizing the verified local token file
           sudo podman build --no-cache --authfile=$AUTH_FILE -t $IMAGE_TAG -f Containerfile.new .
           sudo podman push --authfile=$AUTH_FILE $IMAGE_TAG
 
@@ -52,7 +50,6 @@ jobs:
           mkdir -p output
           sudo podman pull --authfile=$AUTH_FILE $IMAGE_TAG
           
-          # Mount the explicitly generated workspace auth file directly into the expected location inside the builder
           sudo podman run --privileged --rm \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
