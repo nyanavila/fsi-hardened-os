@@ -5,7 +5,6 @@ on:
     branches: [ "main" ]
 
 env:
-  # FIXED: Pointing to your exact 'navila' Quay namespace
   IMAGE_TAG: quay.io/navila/fsi-hardened-os:latest
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
@@ -16,21 +15,23 @@ jobs:
       contents: read
     
     steps:
+      # CRITICAL FIX: Clean any lingering root-owned artifacts BEFORE checking out code
+      - name: Hard Clean Workspace (Pre-flight)
+        run: |
+          sudo rm -rf ./output ./reports fsi-hardened-rhel9.iso $AUTH_FILE
+          
       - name: Checkout Repository Source
         uses: actions/checkout@v4
 
       - name: Prune Runner Storage Layer
         run: |
           sudo podman system prune -a -f --volumes
-          sudo rm -rf ./reports ./output
-          sudo rm -f $AUTH_FILE
 
       - name: Authenticate to Registries
         run: |
-          # FIXED: Swapped username string to match your real Quay robot name 'navila+navila'
           echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin --authfile=$AUTH_FILE
           echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin --authfile=$AUTH_FILE
-      
+
       - name: Build Hardened Bootc Image
         run: |
           sudo podman build --no-cache --authfile=$AUTH_FILE -t $IMAGE_TAG -f Containerfile.new .
@@ -58,16 +59,14 @@ jobs:
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type iso \
             $IMAGE_TAG
-
-          # DYNAMIC FIX: Find any ISO generated anywhere inside the output folder and move it safely
+            
+          # Find any ISO generated anywhere inside the output folder and move it safely
           find ./output -name "*.iso" -exec mv {} ./fsi-hardened-rhel9.iso \;
-         
-          # FIX: Reclaim ownership of the files from root so GitHub Actions can manage them
-          sudo chown -R $(id -u):$(id -g) ./fsi-hardened-rhel9.iso ./output
           
-          # Verification check for the demo log visibility
+          # FIX: Reclaim ownership of the files from root so GitHub can manage them
+          sudo chown -R $(id -u):$(id -g) ./fsi-hardened-rhel9.iso ./output ./reports
+          
           ls -lh ./fsi-hardened-rhel9.iso
-          #sudo mv ./output/iso/install.iso ./fsi-hardened-rhel9.iso
 
       - name: Upload Compliance and Installation Artifacts
         uses: actions/upload-artifact@v4
