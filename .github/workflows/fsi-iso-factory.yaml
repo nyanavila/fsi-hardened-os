@@ -27,10 +27,10 @@ jobs:
 
       - name: Authenticate to Registries
         run: |
-          # FIXED: Hardcoded your exact 'navila' robot account username string
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+github_robot" --password-stdin --authfile=$AUTH_FILE
+          # FIXED: Swapped username string to match your real Quay robot name 'navila+navila'
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin --authfile=$AUTH_FILE
           echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin --authfile=$AUTH_FILE
-
+      
       - name: Build Hardened Bootc Image
         run: |
           sudo podman build --no-cache --authfile=$AUTH_FILE -t $IMAGE_TAG -f Containerfile.new .
