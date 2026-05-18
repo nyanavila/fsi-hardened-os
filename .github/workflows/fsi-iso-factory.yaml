@@ -6,17 +6,14 @@ on:
 
 env:
   IMAGE_TAG: ghcr.io/${{ github.repository }}:latest
-  # Persist authentication tokens across nested tools
-  REGISTRY_AUTH_FILE: ${{ github.workspace }}/.podman_auth.json
 
 jobs:
   iso-factory:
-    # Essential: Must execute on a host with rootful Podman and loop-device access
-    runs-on: self-hosted 
-    # CRITICAL: Grant the GITHUB_TOKEN write access to packages in this organization
+    runs-on: self-hosted
     permissions:
       contents: read
       packages: write
+    
     steps:
       - name: Checkout Repository Source
         uses: actions/checkout@v4
@@ -24,22 +21,17 @@ jobs:
       - name: Prune Runner Storage Layer
         run: |
           sudo podman system prune -a -f --volumes
-          sudo rm -rf ./output ./reports
+          sudo rm -rf ./reports ./output
 
       - name: Authenticate to Registries
         run: |
-          # Log into GitHub Container Registry
+          # Use standard sudo podman login; it saves directly to /root/.docker/config.json automatically
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
-          # Log into the Secure Red Hat Registry
-          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }} " --password-stdin
 
       - name: Build Hardened Bootc Image
         run: |
-          sudo podman build --no-cache \
-            --network=host \
-            --build-arg REDHAT_ORG_ID="${{ secrets.REDHAT_ORG_ID }}" \
-            --build-arg REDHAT_ACTIVATION_KEY="${{ secrets.REDHAT_ACTIVATION_KEY }}" \
-            -t $IMAGE_TAG -f Containerfile.new .
+          sudo podman build --no-cache -t $IMAGE_TAG -f Containerfile.new .
           sudo podman push $IMAGE_TAG
 
       - name: Pre-Boot Compliance Scan (Digital Autopsy)
@@ -54,20 +46,18 @@ jobs:
       - name: Compile Bootable ISO Artifact
         run: |
           mkdir -p output
-          # Pull the target image locally so the builder can access its layers
           sudo podman pull $IMAGE_TAG
           
-          # Execute bootc-image-builder with critical host storage passthrough
+          # Pass root's native config.json directly into the builder container
           sudo podman run --privileged --rm \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
-            -v "$REGISTRY_AUTH_FILE:/root/.docker/config.json:ro" \
+            -v "/root/.docker/config.json:/root/.docker/config.json:ro" \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type iso \
             $IMAGE_TAG
             
-          # Rename the raw output to an enterprise naming standard
           sudo mv ./output/iso/install.iso ./fsi-hardened-rhel9.iso
 
       - name: Upload Compliance and Installation Artifacts
