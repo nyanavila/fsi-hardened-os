@@ -16,7 +16,7 @@ RUN dnf -y install \
   scap-security-guide && \
     #subscription-manager unregister && \
   dnf clean all && \
-rm -rf /var/cache/dnf
+  rm -rf /var/cache/dnf
 
 # 2. Inject your FIPS and Hardening artifacts
 COPY 01-fips.toml /usr/lib/bootc/kargs.d/
