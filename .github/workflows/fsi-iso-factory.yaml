@@ -13,7 +13,10 @@ jobs:
   iso-factory:
     # Essential: Must execute on a host with rootful Podman and loop-device access
     runs-on: self-hosted 
-    
+    # CRITICAL: Grant the GITHUB_TOKEN write access to packages in this organization
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout Repository Source
         uses: actions/checkout@v4
