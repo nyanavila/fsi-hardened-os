@@ -10,12 +10,12 @@ LABEL description="Testing the rhel9 runner"
   #      --org="${REDHAT_ORG_ID}" \
     #    --activationkey="${REDHAT_ACTIVATION_KEY}" \
    #     --force && \
-dnf -y install \
-openscap-scanner \
-openscap-utils \
-scap-security-guide && \
+RUN dnf -y install \
+  openscap-scanner \
+  openscap-utils \
+  scap-security-guide && \
     #subscription-manager unregister && \
-dnf clean all && \
+  dnf clean all && \
 rm -rf /var/cache/dnf
 
 # 2. Inject your FIPS and Hardening artifacts
