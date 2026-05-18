@@ -33,6 +33,7 @@ jobs:
       - name: Build Hardened Bootc Image
         run: |
           sudo podman build --no-cache \
+            --network=host \
             --build-arg REDHAT_ORG_ID="${{ secrets.REDHAT_ORG_ID }}" \
             --build-arg REDHAT_ACTIVATION_KEY="${{ secrets.REDHAT_ACTIVATION_KEY }}" \
             -t $IMAGE_TAG -f Containerfile.new .
