@@ -95,21 +95,25 @@ jobs:
             $IMAGE_TAG
 
 # ==========================================
-  # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP (NETWORK RECOVERY)
+  # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP
   # ==========================================
   cryptographic_attestation:
     name: "Stage 5: Cryptographic Attestation"
     needs: disk_factory
     runs-on: self-hosted
     steps:
-      - name: Normalize Custody and Align Host Permissions via UBI Micro
+      # Step 1: Cleanly pull and cache the pinned UBI Minimal image
+      - name: Pre-Cache Enterprise UBI Minimal Layer
         run: |
-          # ADDED: --net=host bypasses pruned container network bridges 
-          # and routes directly through the host's physical network adapter
+          sudo podman pull registry.access.redhat.com/ubi9/ubi-minimal:9.5-1733934370
+
+      # Step 2: Run the container to execute the path and permission alignments
+      - name: Normalize Custody and Align Host Permissions via UBI Minimal
+        run: |
           sudo podman run --rm \
             --net=host \
             -v "$(pwd):/workspace:Z" \
-            podman pull registry.access.redhat.com/ubi9/ubi-minimal:9.8-1777460003 /bin/sh -c "
+            registry.access.redhat.com/ubi9/ubi-minimal:9.5-1733934370 /bin/sh -c "
               find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
               chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
             "
