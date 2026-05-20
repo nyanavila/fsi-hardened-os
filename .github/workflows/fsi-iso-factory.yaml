@@ -88,8 +88,8 @@ jobs:
             --type iso \
             $IMAGE_TAG
 
-  # ==========================================
-  # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP
+# ==========================================
+  # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP (NETWORK RECOVERY)
   # ==========================================
   cryptographic_attestation:
     name: "Stage 5: Cryptographic Attestation"
@@ -98,11 +98,15 @@ jobs:
     steps:
       - name: Normalize Custody and Align Host Permissions via UBI Micro
         run: |
-          sudo podman run --rm -v "$(pwd):/workspace:Z" registry.access.redhat.io/ubi9/ubi-micro:latest /bin/sh -c "
-            find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
-            chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
-          "
-
+          # ADDED: --net=host bypasses pruned container network bridges 
+          # and routes directly through the host's physical network adapter
+          sudo podman run --rm \
+            --net=host \
+            -v "$(pwd):/workspace:Z" \
+            registry.access.redhat.io/ubi9/ubi-micro:latest /bin/sh -c "
+              find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
+              chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
+            "
   # ==========================================
   # STAGE 6: AUTOMATED VAPOR TESTING (SMOKE TEST)
   # ==========================================
