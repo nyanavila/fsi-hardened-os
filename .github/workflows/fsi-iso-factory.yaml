@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "Executing declarative syntax validation on Containerfile..."
 
-  # ==========================================
+ # ==========================================
   # STAGE 2: IMMUTABLE ASSEMBLY
   # ==========================================
   immutable_assembly:
@@ -38,16 +38,22 @@ jobs:
       - name: Prune Runner Storage Layer
         run: sudo podman system prune -a -f --volumes
 
+      # CHANGED: We now log in directly using 'sudo' without a custom path.
+      # This saves the token to the host's root profile, keeping it alive for later stages.
       - name: Authenticate to Enterprise Registries
         run: |
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin --authfile=$AUTH_FILE
-          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin --authfile=$AUTH_FILE
+          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
 
       - name: Synthesize and Push Hardened Bootc Image
         run: |
-          sudo podman build --no-cache --authfile=$AUTH_FILE -t $IMAGE_TAG -f Containerfile.new .
-          sudo podman push --authfile=$AUTH_FILE $IMAGE_TAG
-
+          sudo podman build \
+            --pull=always \
+            --no-cache \
+            -t $IMAGE_TAG \
+            -f Containerfile.new .
+            
+          sudo podman push $IMAGE_TAG
   # ==========================================
   # STAGE 3: DIGITAL AUTOPSY (COMPLIANCE SCAN)
   # ==========================================
