@@ -103,7 +103,7 @@ jobs:
           sudo podman run --rm \
             --net=host \
             -v "$(pwd):/workspace:Z" \
-            registry.access.redhat.io/ubi9/ubi-micro:latest /bin/sh -c "
+            registry.redhat.io/ubi9/ubi-micro:latest /bin/sh -c "
               find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
               chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
             "
