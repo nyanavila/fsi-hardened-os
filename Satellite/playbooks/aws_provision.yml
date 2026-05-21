@@ -1,0 +1,58 @@
+---
+- name: Provision Hardened Production Instance inside AWS VPC
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    aws_region: "us-east-1"
+    instance_type: "t3.medium"
+    security_group_id: "sg-0123456789abcdef0"
+    subnet_id: "subnet-0abcdef1234567890"
+    key_pair_name: "fsi-enterprise-ssh-key"
+    ami_search_name: "fsi-hardened-rhel9-*"
+
+  tasks:
+    - name: Gather Hardened Bootc Image Manifest Metadata from Satellite AMIs
+      amazon.aws.ec2_ami_info:
+        region: "{{ aws_region }}"
+        filters:
+          name: "{{ ami_search_name }}"
+      register: satellite_ami
+
+    - name: Validate That a Verified Image Exists in the Registry
+      ansible.builtin.assert:
+        that:
+          - satellite_ami.images | length > 0
+        fail_msg: "CRITICAL: No compliance-vetted AMI found matching name {{ ami_search_name }}"
+
+    - name: Launch Hardened AWS EC2 Target Node Under FSI Compliance
+      amazon.aws.ec2_instance:
+        name: "rhel9-fsi-production-node"
+        key_name: "{{ key_pair_name }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ satellite_ami.images[-1].image_id }}"
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ security_group_id }}"
+        vpc_subnet_id: "{{ subnet_id }}"
+        detailed_monitoring: true
+        ebs_optimized: true
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 40
+              volume_type: gp3
+              encrypted: true
+        tags:
+          Environment: "Production"
+          ComplianceLevel: "STIG-HARDENED"
+          PatchCycle: "Automated-Factory"
+          Owner: "DevSecOps-Team"
+      register: ec2_output
+
+    - name: Stream Target Node Status to Output Console
+      ansible.builtin.debug:
+        msg: 
+          - "Instance Provisioning Successfully Initiated!"
+          - "Instance ID: {{ ec2_output.instances[0].instance_id }}"
+          - "Private Networking Bound to IP: {{ ec2_output.instances[0].private_ip_address }}"
