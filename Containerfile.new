@@ -1,5 +1,6 @@
 # Use the official RHEL 9 or 10 bootc image
-FROM registry.redhat.io/rhel9/rhel-bootc:latest
+#FROM registry.redhat.io/rhel9/rhel-bootc:latest
+FROM ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/rhel9_rhel-bootc:latest
 
 # Define build arguments for subscription
 ARG REDHAT_ORG_ID
