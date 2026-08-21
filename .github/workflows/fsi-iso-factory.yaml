@@ -4,9 +4,13 @@ on:
   push:
     branches: [ "architecture/fsi-hardened-supply-chain" ]
   workflow_dispatch: 
-
+     inputs:
+        skip_iso_build:
+          description: 'Skip ISO build stage (faster iteration)'
+          type: boolean
+          default: false
 env:
-  IMAGE_TAG: quay.io/navila/fsi-hardened-os:latest
+  IMAGE_TAG: ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/fsi-hardened-os:latest
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
@@ -43,9 +47,8 @@ jobs:
       # This saves the token to the host's root profile, keeping it alive for later stages.
       - name: Authenticate to Enterprise Registries
         run: |
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login ip-10-0-1-135.us-east-2.compute.internal -u admin --password-stdin --tls-verify=false
           echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
-
       - name: Synthesize and Push Hardened Bootc Image
         run: |
           sudo podman build \
@@ -54,7 +57,7 @@ jobs:
             -t $IMAGE_TAG \
             -f Containerfile.new .
             
-          sudo podman push $IMAGE_TAG
+          sudo podman push --tls-verify=false $IMAGE_TAG
   # ==========================================
   # STAGE 3: DIGITAL AUTOPSY (COMPLIANCE SCAN)
   # ==========================================
@@ -78,13 +81,14 @@ jobs:
   disk_factory:
     name: "Stage 4: Disk Factory"
     needs: digital_autopsy
+    if: ${{ !inputs.skip_iso_build }}
     runs-on: self-hosted
     steps:
       - name: Compile Bare-Metal Installation ISO
         run: |
           mkdir -p output
           echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin --authfile=$AUTH_FILE
-          sudo podman pull --authfile=$AUTH_FILE $IMAGE_TAG
+          sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
           
           sudo podman run --privileged --rm \
             -v /dev:/dev \
