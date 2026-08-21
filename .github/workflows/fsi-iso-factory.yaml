@@ -87,9 +87,9 @@ jobs:
       - name: Compile Bare-Metal Installation ISO
         run: |
           mkdir -p output
-          echo "${{ secrets.QUAY_PASSWORD }}" | sudo podman login quay.io -u "navila+navila" --password-stdin --authfile=$AUTH_FILE
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login ip-10-0-1-135.us-east-2.compute.internal -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
           sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
-          
+
           sudo podman run --privileged --rm \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
