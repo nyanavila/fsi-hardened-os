@@ -3,6 +3,7 @@ name: FSI Hardened Software Supply Chain (7-Stage DevSecOps Pipeline)
 on:
   push:
     branches: [ "architecture/fsi-hardened-supply-chain" ]
+  workflow_dispatch: 
 
 env:
   IMAGE_TAG: quay.io/navila/fsi-hardened-os:latest
