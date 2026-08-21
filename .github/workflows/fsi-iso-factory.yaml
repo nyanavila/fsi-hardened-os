@@ -5,7 +5,7 @@ on:
     branches: [ "architecture/fsi-hardened-supply-chain" ]
 
 env:
-  IMAGE_TAG: quay.io/navila/fsi-hardened-os:latest
+  IMAGE_TAG: ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/fsi-hardened-os:latest
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
