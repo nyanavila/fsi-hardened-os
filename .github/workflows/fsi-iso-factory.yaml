@@ -92,6 +92,7 @@ jobs:
 
           sudo podman run --rm \
             --privileged \
+            --net=host
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
