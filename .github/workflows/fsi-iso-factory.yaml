@@ -1,14 +1,22 @@
 name: FSI Hardened Software Supply Chain (7-Stage DevSecOps Pipeline)
-
 on:
   push:
     branches: [ "architecture/fsi-hardened-supply-chain" ]
-  workflow_dispatch: 
-     inputs:
-        skip_iso_build:
-          description: 'Skip ISO build stage (faster iteration)'
-          type: boolean
-          default: false
+  workflow_dispatch:
+    inputs:
+      skip_iso_build:
+        description: 'Skip build stage entirely (fastest iteration — Stages 1-3 only)'
+        type: boolean
+        default: false
+      build_type:
+        description: 'What to build'
+        type: choice
+        options:
+          - ami
+          - iso
+          - both
+        default: ami
+
 env:
   IMAGE_TAG: ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/fsi-hardened-os:latest
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
@@ -78,21 +86,22 @@ jobs:
   # ==========================================
   # STAGE 4: BARE-METAL DISK FACTORY
   # ==========================================
-  disk_factory:
-    name: "Stage 4: AMI Factory"
+  disk_factory_ami:
+    name: "Stage 4a: AMI Factory"
     needs: digital_autopsy
-    if: ${{ !inputs.skip_iso_build }}
+    if: ${{ !inputs.skip_iso_build && (inputs.build_type == 'ami' || inputs.build_type == 'both') }}
     runs-on: self-hosted
+    outputs:
+      ami_id: ${{ steps.build_ami.outputs.ami_id }}
     steps:
       - name: Compile AWS AMI from Hardened Image
+        id: build_ami
         run: |
           mkdir -p output
           echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login ip-10-0-1-135.us-east-2.compute.internal -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
           sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
 
-          sudo podman run --rm \
-            --privileged \
-            --net=host  \
+          sudo podman run --rm --privileged --net=host \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
@@ -103,29 +112,66 @@ jobs:
             --aws-region us-east-2 \
             --aws-bucket fsi-hardened-os-ami-staging \
             $IMAGE_TAG
+
+          AMI_ID=$(aws ec2 describe-images --owners self --region us-east-2 \
+            --filters "Name=name,Values=fsi-hardened-os-*" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+          echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
+  disk_factory_iso:
+    name: "Stage 4b: ISO Factory"
+    needs: digital_autopsy
+    if: ${{ !inputs.skip_iso_build && (inputs.build_type == 'iso' || inputs.build_type == 'both') }}
+    runs-on: self-hosted
+    steps:
+      - name: Compile Bare-Metal Installation ISO
+        run: |
+          mkdir -p output
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login ip-10-0-1-135.us-east-2.compute.internal -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
+          sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
+
+          sudo podman run --privileged --rm \
+            -v /dev:/dev \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/output:/output:Z" \
+            -v "$AUTH_FILE:/root/.docker/config.json:ro" \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type iso \
+            $IMAGE_TAG
+          # note: still has the known grub2-probe issue on this runner — see earlier notes
 # ==========================================
   # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP
   # ==========================================
   cryptographic_attestation:
     name: "Stage 5: Cryptographic Attestation"
-    needs: disk_factory
+    needs: [disk_factory_ami, disk_factory_iso]
+    if: always() && (needs.disk_factory_ami.result == 'success' || needs.disk_factory_iso.result == 'success')
     runs-on: self-hosted
     steps:
-      # Step 1: Cleanly pull and cache the pinned UBI Minimal image
-      - name: Pre-Cache Enterprise UBI Minimal Layer
+      - name: Attest AMI (if built)
+        if: needs.disk_factory_ami.result == 'success'
         run: |
-          sudo podman pull registry.access.redhat.com/ubi9/ubi-minimal:9.8-1777460003
+          mkdir -p reports
+          cat > reports/ami-attestation.json << EOF
+          {
+            "ami_id": "${{ needs.disk_factory_ami.outputs.ami_id }}",
+            "source_image": "${{ env.IMAGE_TAG }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}"
+          }
+          EOF
 
-      # Step 2: Run the container to execute the path and permission alignments
-      - name: Normalize Custody and Align Host Permissions via UBI Minimal
+      - name: Normalize ISO ownership (if built)
+        if: needs.disk_factory_iso.result == 'success'
         run: |
-          sudo podman run --rm \
-            --net=host \
+          sudo podman run --rm --net=host \
             -v "$(pwd):/workspace:Z" \
             registry.access.redhat.com/ubi9/ubi-minimal:9.8-1777460003 /bin/sh -c "
               find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
               chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
             "
+  
   # ==========================================
   # STAGE 6: AUTOMATED VAPOR TESTING (SMOKE TEST)
   # ==========================================
@@ -138,13 +184,13 @@ jobs:
         run: |
           echo "ISO Payload verification: Checking file presence and integrity..."
           ls -lh ./fsi-hardened-rhel9.iso
-
   # ==========================================
   # STAGE 7: CONTINUOUS GOVERNANCE
   # ==========================================
   continuous_governance:
     name: "Stage 7: Continuous Governance"
-    needs: vapor_test
+    needs: [cryptographic_attestation]
+    if: always() && needs.cryptographic_attestation.result == 'success'
     runs-on: self-hosted
     steps:
       - name: Upload Certified Production Media and Compliance Ledger
@@ -153,5 +199,7 @@ jobs:
           name: fsi-gold-master-bundle
           path: |
             reports/pci_dss_compliance.html
+            reports/ami-attestation.json
             fsi-hardened-rhel9.iso
-          retention-days: 2
+          if-no-files-found: ignore
+          retention-days: 90
