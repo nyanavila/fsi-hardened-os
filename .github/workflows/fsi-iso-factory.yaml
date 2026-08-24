@@ -79,24 +79,29 @@ jobs:
   # STAGE 4: BARE-METAL DISK FACTORY
   # ==========================================
   disk_factory:
-    name: "Stage 4: Disk Factory"
+    name: "Stage 4: AMI Factory"
     needs: digital_autopsy
     if: ${{ !inputs.skip_iso_build }}
     runs-on: self-hosted
     steps:
-      - name: Compile Bare-Metal Installation ISO
+      - name: Compile AWS AMI from Hardened Image
         run: |
           mkdir -p output
           echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login ip-10-0-1-135.us-east-2.compute.internal -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
           sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
 
-          sudo podman run --privileged --rm \
+          sudo podman run --rm \
+            --privileged \
             -v /dev:/dev \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
             -v "$AUTH_FILE:/root/.docker/config.json:ro" \
+            -v "$HOME/.aws:/root/.aws:ro" \
             quay.io/centos-bootc/bootc-image-builder:latest \
-            --type iso \
+            --type ami \
+            --aws-ami-name "fsi-hardened-os-$(date -u +%Y%m%d-%H%M%S)" \
+            --aws-region us-east-2 \
+            --aws-bucket fsi-hardened-os-ami-staging \
             $IMAGE_TAG
 
 # ==========================================
