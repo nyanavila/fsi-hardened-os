@@ -96,14 +96,12 @@ jobs:
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/output:/output:Z" \
             -v "$AUTH_FILE:/root/.docker/config.json:ro" \
-            -v "$HOME/.aws:/root/.aws:ro" \
             quay.io/centos-bootc/bootc-image-builder:latest \
             --type ami \
             --aws-ami-name "fsi-hardened-os-$(date -u +%Y%m%d-%H%M%S)" \
             --aws-region us-east-2 \
             --aws-bucket fsi-hardened-os-ami-staging \
             $IMAGE_TAG
-
 # ==========================================
   # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP
   # ==========================================
