@@ -1,0 +1,16 @@
+{
+  "_comment": "Compliance gate policy. blocking_rules must PASS or the build fails. waivers are reported but never block; each needs a reason an auditor can read.",
+  "min_score": 0,
+  "on_notapplicable": "fail",
+  "blocking_rules": [
+    "xccdf_org.ssgproject.content_rule_sshd_disable_root_login",
+    "xccdf_org.ssgproject.content_rule_sshd_disable_empty_passwords",
+    "xccdf_org.ssgproject.content_rule_package_telnet-server_removed",
+    "xccdf_org.ssgproject.content_rule_package_telnet_removed",
+    "xccdf_org.ssgproject.content_rule_file_permissions_etc_shadow",
+    "xccdf_org.ssgproject.content_rule_file_owner_etc_shadow"
+  ],
+  "waivers": {
+    "xccdf_org.ssgproject.content_rule_configure_crypto_policy": "PCI-DSS profile expects the DEFAULT crypto policy. This image deliberately sets FIPS, which is stricter. Accepted deviation."
+  }
+}

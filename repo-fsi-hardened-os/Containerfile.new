@@ -1,0 +1,36 @@
+# Hardened RHEL 9 bootc image.
+# Base is the Satellite-mirrored RHEL 9 bootc image, NOT registry.redhat.io directly.
+# The architecture/fsi-hardened-supply-chain branch reverted this to registry.redhat.io,
+# which pulls the base straight from the internet and breaks the Act 1 provenance claim
+# ("entitled content, governed by Satellite"). Restored here.
+FROM ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/rhel9_rhel-bootc:latest
+
+LABEL description="FSI hardened standard operating environment (RHEL 9 image mode)"
+
+# 1. Security and compliance tooling (one layer, cache cleaned)
+RUN dnf -y install \
+      openscap-scanner \
+      openscap-utils \
+      scap-security-guide && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
+
+# 2. Kernel-level FIPS via bootc kargs
+COPY 01-fips.toml /usr/lib/bootc/kargs.d/
+
+# 3. User-space crypto policy
+RUN update-crypto-policies --no-reload --set FIPS
+
+# 4. SSH lockdown.
+#    A drop-in is used on purpose: RHEL 9 ships "#PermitRootLogin prohibit-password",
+#    so the old  sed 's/#PermitRootLogin yes/.../'  matched nothing and changed nothing.
+#    sshd uses the FIRST value it reads, and 00- sorts before every other drop-in.
+RUN printf '%s\n' \
+      'PermitRootLogin no' \
+      'PermitEmptyPasswords no' \
+      > /etc/ssh/sshd_config.d/00-fsi-hardening.conf && \
+    chmod 600 /etc/ssh/sshd_config.d/00-fsi-hardening.conf
+
+# 5. User and filesystem blueprint
+RUN mkdir -p /usr/lib/bootc/configs/
+COPY fsi-server.toml /usr/lib/bootc/configs/fsi-server.toml
