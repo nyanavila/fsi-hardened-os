@@ -188,12 +188,6 @@ jobs:
           sudo chown -R $USER:$USER reports/ 
           sudo chmod -R 755 reports/ 
           
-      - name: Upload Compliance Artifacts 
-        if: always() 
-        uses: actions/upload-artifact@v4 
-        with: 
-          name: compliance-reports 
-          path: reports/
           
       - name: Upload compliance reports (always, regardless of outcome)
         if: always()
@@ -215,6 +209,7 @@ jobs:
               /reports/pci-dss-results.xml
           " || echo "Fix generation itself failed -- see reports/ for raw scan results and remediate manually."
 
+      
       - name: Upload candidate fix scripts (for human review -- NOT auto-applied)
         if: steps.evaluate.outputs.high_count != '0'
         uses: actions/upload-artifact@v4
