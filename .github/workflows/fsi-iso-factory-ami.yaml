@@ -6,18 +6,28 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_TAG: ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/fsi-hardened-os:${{ github.run_id }}-$(date -u +%Y%m%d%H%M%S)
   AUTH_FILE: ${{ github.workspace }}/containers-auth.json
 
 jobs:
   static_triage:
     name: "Stage 1: Static Triage"
     runs-on: self-hosted
+    outputs:
+      image_tag: ${{ steps.set_tag.outputs.image_tag }}
     steps:
       - name: Hard Clean Workspace (Pre-flight)
         run: sudo rm -rf ./output ./reports fsi-hardened-rhel9.iso $AUTH_FILE
+
       - name: Checkout Repository Source
         uses: actions/checkout@v4
+
+      - name: Generate timestamped image tag
+        id: set_tag
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "image_tag=ip-10-0-1-135.us-east-2.compute.internal/default_organization/fsi-hardened-images/fsi-hardened-os:${TIMESTAMP}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Audit Build Instructions
         run: echo "Executing declarative syntax validation on Containerfile..."
 
@@ -25,6 +35,8 @@ jobs:
     name: "Stage 2: Immutable Assembly"
     needs: static_triage
     runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
     steps:
       - name: Prune Runner Storage Layer
         run: sudo podman system prune -a -f --volumes
@@ -39,8 +51,10 @@ jobs:
 
   digital_autopsy:
     name: "Stage 3: Digital Autopsy"
-    needs: immutable_assembly
+    needs: [static_triage, immutable_assembly]
     runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
     steps:
       - name: Execute Automated OpenSCAP Compliance Evaluation
         run: |
@@ -54,8 +68,10 @@ jobs:
 
   ami_factory:
     name: "Stage 4: AMI Factory"
-    needs: digital_autopsy
+    needs: [static_triage, digital_autopsy]
     runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
     steps:
       - name: Compile AWS AMI from Hardened Image
         run: |
@@ -77,7 +93,7 @@ jobs:
 
   cryptographic_attestation:
     name: "Stage 5: Cryptographic Attestation"
-    needs: ami_factory
+    needs: [static_triage, ami_factory]
     runs-on: self-hosted
     steps:
       - name: Record AMI attestation details
@@ -89,7 +105,7 @@ jobs:
           cat > reports/ami-attestation.json << EOF
           {
             "ami_id": "$AMI_ID",
-            "source_image": "${{ env.IMAGE_TAG }}",
+            "source_image": "${{ needs.static_triage.outputs.image_tag }}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "workflow_run": "${{ github.run_id }}",
             "commit": "${{ github.sha }}"
