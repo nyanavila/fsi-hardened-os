@@ -182,6 +182,19 @@ jobs:
           echo "high_count=${HIGH_COUNT}" >> "$GITHUB_OUTPUT"
           echo "Found ${HIGH_COUNT} HIGH-severity findings across both profiles."
 
+      - name: Fix report directory ownership for runner user 
+        if: always() 
+        run: | 
+          sudo chown -R $USER:$USER reports/ 
+          sudo chmod -R 755 reports/ 
+          
+      - name: Upload Compliance Artifacts 
+        if: always() 
+        uses: actions/upload-artifact@v4 
+        with: 
+          name: compliance-reports 
+          path: reports/
+          
       - name: Upload compliance reports (always, regardless of outcome)
         if: always()
         uses: actions/upload-artifact@v4
