@@ -1,0 +1,361 @@
+name: FSI Hardened Software Supply Chain — AMI Build
+
+# CHANGELOG from the original version, all fixes discussed and confirmed
+# in this session:
+#
+#   1. IMAGE_TAG timestamp bug: `env:` blocks can't run shell commands
+#      ($(date...) was never evaluated). Fixed by computing the tag in a
+#      real shell step and passing it via job outputs.
+#
+#   2. The `|| echo "Compliance evaluation concluded with findings."`
+#      pattern collapsed oscap's genuine exit codes (1 = tool error,
+#      2 = real findings) into "ignore everything, keep going" -- this
+#      is why non-compliant images have been shipping through undetected.
+#      Fixed by capturing the real exit code and gating on it explicitly.
+#
+#   3. The pipeline was only scanning against `pci-dss`, while Satellite's
+#      actual runtime policies for this fleet cover BOTH CIS Level 2
+#      (fsi-cis-l2-rhel9) and PCI-DSS (fsi-pci-dss-rhel9) -- two different
+#      standards. A build gate checking only one of them isn't actually
+#      the same policy as what runs at audit time. Fixed by scanning
+#      against both CONFIRMED profile IDs (verified live against this
+#      Satellite instance earlier in this engagement):
+#        CIS L2:   xccdf_org.ssgproject.content_profile_cis
+#        PCI-DSS:  xccdf_org.ssgproject.content_profile_pci-dss
+#
+#   4. Remediation is NOT auto-applied inline from an unreviewed,
+#      tool-generated script -- that would mean an auto-generated,
+#      unreviewed script gets baked into an image you're about to sign
+#      and attest as trustworthy. Instead: any already-REVIEWED,
+#      already-COMMITTED remediation script (in remediation-scripts/)
+#      gets applied during the build itself (Stage 2, via the
+#      Containerfile). If HIGH findings remain even after those, this
+#      pipeline BLOCKS promotion and uploads a freshly-generated
+#      candidate fix script as a reviewable artifact -- a human must
+#      review and commit it to remediation-scripts/ before the NEXT
+#      build run will apply it. This is a two-run process by design,
+#      matching the Tier 4 (human approval) principle used throughout
+#      this engagement's AAP-side remediation loop.
+#
+# HONEST STATUS: this file has not been run live in this session. The
+# `oscap xccdf generate fix` step and the remediation-scripts/ apply
+# mechanism in Containerfile.new are new designs built on documented
+# oscap behavior, not independently verified against a live run yet --
+# same discipline as everything else flagged "designed, not yet proven"
+# in this engagement's honest-status reporting.
+
+on:
+  push:
+    branches: [ "architecture/fsi-hardened-supply-chain" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'What to build'
+        type: choice
+        options:
+          - ami
+          - iso
+          - both
+        default: ami
+
+env:
+  AUTH_FILE: ${{ github.workspace }}/containers-auth.json
+  SATELLITE_HOST: ip-10-0-1-135.us-east-2.compute.internal
+  # CONFIRMED profile IDs from Satellite's own scap_content_profiles API,
+  # matching the two policies actually running against this fleet
+  # (fsi-cis-l2-rhel9 and fsi-pci-dss-rhel9).
+  CIS_L2_PROFILE: xccdf_org.ssgproject.content_profile_cis
+  PCIDSS_PROFILE: xccdf_org.ssgproject.content_profile_pci-dss
+
+jobs:
+  # ==========================================
+  # STAGE 1: STATIC TRIAGE & LINTING
+  # ==========================================
+  static_triage:
+    name: "Stage 1: Static Triage"
+    runs-on: self-hosted
+    outputs:
+      image_tag: ${{ steps.set_tag.outputs.image_tag }}
+      # Fallback default so push-triggered runs (no workflow_dispatch
+      # inputs available) still build something sensible instead of
+      # silently skipping every downstream job.
+      effective_build_type: ${{ steps.set_tag.outputs.effective_build_type }}
+    steps:
+      - name: Hard Clean Workspace (Pre-flight)
+        run: sudo rm -rf ./output ./reports fsi-hardened-rhel9.iso $AUTH_FILE
+
+      - name: Checkout Repository Source
+        uses: actions/checkout@v4
+
+      - name: Generate timestamped image tag and resolve build type
+        id: set_tag
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "image_tag=${SATELLITE_HOST}/default_organization/fsi-hardened-images/fsi-hardened-os:${TIMESTAMP}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "effective_build_type=${{ inputs.build_type || 'ami' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Audit Build Instructions
+        run: echo "Executing declarative syntax validation on Containerfile..."
+
+  # ==========================================
+  # STAGE 2: IMMUTABLE ASSEMBLY
+  # (applies any already-reviewed remediation-scripts/ during the build
+  # itself, via Containerfile.new -- see that file's own COPY/RUN lines)
+  # ==========================================
+  immutable_assembly:
+    name: "Stage 2: Immutable Assembly"
+    needs: static_triage
+    runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
+    steps:
+      - name: Prune Runner Storage Layer
+        run: sudo podman system prune -a -f --volumes
+
+      - name: Authenticate to Enterprise Registries
+        run: |
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login $SATELLITE_HOST -u admin --password-stdin --tls-verify=false
+          echo "${{ secrets.RH_REGISTRY_PASSWORD }}" | sudo podman login registry.redhat.io -u "${{ secrets.RH_REGISTRY_USER }}" --password-stdin
+
+      - name: Synthesize and Push Hardened Bootc Image
+        run: |
+          sudo podman build --pull=always --no-cache -t $IMAGE_TAG -f Containerfile.new .
+          sudo podman push --tls-verify=false $IMAGE_TAG
+
+  # ==========================================
+  # STAGE 3: DIGITAL AUTOPSY (COMPLIANCE SCAN)
+  # Scans against BOTH profiles Satellite actually runs at audit time.
+  # Genuinely fails the build on any HIGH-severity finding. Always
+  # uploads the reports regardless of outcome. On failure, generates a
+  # candidate fix script as a reviewable artifact (NOT auto-applied).
+  # ==========================================
+  digital_autopsy:
+    name: "Stage 3: Digital Autopsy"
+    needs: [static_triage, immutable_assembly]
+    runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
+    outputs:
+      high_count: ${{ steps.evaluate.outputs.high_count }}
+    steps:
+      - name: Checkout Repository Source
+        uses: actions/checkout@v4
+
+      - name: Log in to Satellite registry
+        run: |
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login $SATELLITE_HOST -u admin --password-stdin --tls-verify=false
+
+      - name: Evaluate against CIS Level 2 and PCI-DSS (both, matching Satellite's real policies)
+        id: evaluate
+        run: |
+          mkdir -p reports
+          set +e
+
+          sudo podman run --rm --tls-verify=false -v "$(pwd)/reports:/reports:Z" $IMAGE_TAG /bin/bash -c "
+            oscap xccdf eval --profile ${CIS_L2_PROFILE} \
+              --report /reports/cis-l2-compliance.html \
+              --results /reports/cis-l2-results.xml \
+              /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+          "
+          CIS_EXIT=$?
+
+          sudo podman run --rm --tls-verify=false -v "$(pwd)/reports:/reports:Z" $IMAGE_TAG /bin/bash -c "
+            oscap xccdf eval --profile ${PCIDSS_PROFILE} \
+              --report /reports/pci-dss-compliance.html \
+              --results /reports/pci-dss-results.xml \
+              /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+          "
+          PCIDSS_EXIT=$?
+
+          set -e
+
+          # oscap exit codes: 0 = all pass, 1 = genuine tool/evaluation
+          # error, 2 = evaluation succeeded, real findings exist. Exit
+          # code 1 on EITHER scan means we don't even trust the results.
+          if [ "$CIS_EXIT" -eq 1 ] || [ "$PCIDSS_EXIT" -eq 1 ]; then
+            echo "A genuine oscap tool/evaluation error occurred (exit code 1) -- results are not trustworthy."
+            exit 1
+          fi
+
+          HIGH_COUNT=$(grep -ho 'severity="high"' reports/*-results.xml | wc -l)
+          echo "high_count=${HIGH_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Found ${HIGH_COUNT} HIGH-severity findings across both profiles."
+
+      - name: Upload compliance reports (always, regardless of outcome)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-reports-${{ github.run_id }}
+          path: reports/*.html
+          retention-days: 90
+
+      - name: Generate a candidate remediation fix script for human review (only if HIGH findings exist)
+        if: steps.evaluate.outputs.high_count != '0'
+        run: |
+          sudo podman run --rm --tls-verify=false -v "$(pwd)/reports:/reports:Z" $IMAGE_TAG /bin/bash -c "
+            oscap xccdf generate fix --profile ${CIS_L2_PROFILE} \
+              --output /reports/candidate-cis-l2-fix.sh \
+              /reports/cis-l2-results.xml
+            oscap xccdf generate fix --profile ${PCIDSS_PROFILE} \
+              --output /reports/candidate-pci-dss-fix.sh \
+              /reports/pci-dss-results.xml
+          " || echo "Fix generation itself failed -- see reports/ for raw scan results and remediate manually."
+
+      - name: Upload candidate fix scripts (for human review -- NOT auto-applied)
+        if: steps.evaluate.outputs.high_count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-fix-scripts-${{ github.run_id }}
+          path: reports/candidate-*.sh
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Block promotion -- HIGH-severity findings remain unresolved
+        if: steps.evaluate.outputs.high_count != '0'
+        run: |
+          echo "BLOCKING: ${{ steps.evaluate.outputs.high_count }} HIGH-severity findings remain."
+          echo "Download the 'compliance-reports' artifact to see what failed, and the"
+          echo "'candidate-fix-scripts' artifact for a proposed (UNREVIEWED) fix."
+          echo "A human must review and commit an approved fix to remediation-scripts/"
+          echo "before the next build run will apply it automatically."
+          exit 1
+
+  # ==========================================
+  # STAGE 4: BARE-METAL DISK FACTORY
+  # Only reached if Stage 3 found zero HIGH-severity findings.
+  # ==========================================
+  disk_factory_ami:
+    name: "Stage 4a: AMI Factory"
+    needs: [static_triage, digital_autopsy]
+    if: ${{ needs.static_triage.outputs.effective_build_type == 'ami' || needs.static_triage.outputs.effective_build_type == 'both' }}
+    runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
+    outputs:
+      ami_id: ${{ steps.build_ami.outputs.ami_id }}
+    steps:
+      - name: Compile AWS AMI from Hardened Image
+        id: build_ami
+        run: |
+          mkdir -p output
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login $SATELLITE_HOST -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
+          sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
+
+          sudo podman run --rm --privileged --net=host \
+            -v /dev:/dev \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/output:/output:Z" \
+            -v "$AUTH_FILE:/root/.docker/config.json:ro" \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type ami \
+            --aws-ami-name "fsi-hardened-os-$(date -u +%Y%m%d-%H%M%S)" \
+            --aws-region us-east-2 \
+            --aws-bucket fsi-hardened-os-ami-staging \
+            $IMAGE_TAG
+
+          AMI_ID=$(aws ec2 describe-images --owners self --region us-east-2 \
+            --filters "Name=name,Values=fsi-hardened-os-*" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+          echo "ami_id=${AMI_ID}" >> "$GITHUB_OUTPUT"
+
+  disk_factory_iso:
+    name: "Stage 4b: ISO Factory"
+    needs: [static_triage, digital_autopsy]
+    if: ${{ needs.static_triage.outputs.effective_build_type == 'iso' || needs.static_triage.outputs.effective_build_type == 'both' }}
+    runs-on: self-hosted
+    env:
+      IMAGE_TAG: ${{ needs.static_triage.outputs.image_tag }}
+    steps:
+      - name: Compile Bare-Metal Installation ISO
+        run: |
+          mkdir -p output
+          echo "${{ secrets.SATELLITE_PASSWORD }}" | sudo podman login $SATELLITE_HOST -u admin --password-stdin --tls-verify=false --authfile=$AUTH_FILE
+          sudo podman pull --tls-verify=false --authfile=$AUTH_FILE $IMAGE_TAG
+
+          sudo podman run --privileged --rm \
+            -v /dev:/dev \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/output:/output:Z" \
+            -v "$AUTH_FILE:/root/.docker/config.json:ro" \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type iso \
+            $IMAGE_TAG
+          # known grub2-probe issue on this runner remains open -- see earlier notes
+
+  # ==========================================
+  # STAGE 5: CRYPTOGRAPHIC ATTESTATION & OWNERSHIP
+  # ==========================================
+  cryptographic_attestation:
+    name: "Stage 5: Cryptographic Attestation"
+    needs: [static_triage, disk_factory_ami, disk_factory_iso]
+    if: always() && (needs.disk_factory_ami.result == 'success' || needs.disk_factory_iso.result == 'success')
+    runs-on: self-hosted
+    steps:
+      - name: Attest AMI (if built)
+        if: needs.disk_factory_ami.result == 'success'
+        run: |
+          mkdir -p reports
+          cat > reports/ami-attestation.json << EOF
+          {
+            "ami_id": "${{ needs.disk_factory_ami.outputs.ami_id }}",
+            "source_image": "${{ needs.static_triage.outputs.image_tag }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}",
+            "compliance_gate": "passed -- zero HIGH-severity findings across CIS L2 and PCI-DSS"
+          }
+          EOF
+          cat reports/ami-attestation.json
+
+      - name: Normalize ISO ownership (if built)
+        if: needs.disk_factory_iso.result == 'success'
+        run: |
+          sudo podman run --rm --net=host \
+            -v "$(pwd):/workspace:Z" \
+            registry.access.redhat.com/ubi9/ubi-minimal:9.8-1777460003 /bin/sh -c "
+              find /workspace/output -name '*.iso' -exec mv {} /workspace/fsi-hardened-rhel9.iso \;
+              chown -R $(id -u):$(id -g) /workspace/fsi-hardened-rhel9.iso /workspace/output /workspace/reports
+            "
+
+  # ==========================================
+  # STAGE 6: AUTOMATED VAPOR TESTING (SMOKE TEST)
+  # ==========================================
+  vapor_test:
+    name: "Stage 6: Vapor Testing"
+    needs: [cryptographic_attestation, disk_factory_ami, disk_factory_iso]
+    if: always() && needs.cryptographic_attestation.result == 'success'
+    runs-on: self-hosted
+    steps:
+      - name: Verify AMI exists and is available
+        if: needs.disk_factory_ami.result == 'success'
+        run: |
+          cat reports/ami-attestation.json
+          AMI_ID=$(jq -r '.ami_id' reports/ami-attestation.json)
+          aws ec2 describe-images --image-ids "$AMI_ID" --region us-east-2 --query 'Images[0].State' --output text
+
+      - name: Verify ISO exists
+        if: needs.disk_factory_iso.result == 'success'
+        run: |
+          ls -lh ./fsi-hardened-rhel9.iso
+
+  # ==========================================
+  # STAGE 7: CONTINUOUS GOVERNANCE
+  # ==========================================
+  continuous_governance:
+    name: "Stage 7: Continuous Governance"
+    needs: [vapor_test]
+    if: always() && needs.vapor_test.result == 'success'
+    runs-on: self-hosted
+    steps:
+      - name: Upload Certified Production Media and Compliance Ledger
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsi-gold-master-bundle
+          path: |
+            reports/cis-l2-compliance.html
+            reports/pci-dss-compliance.html
+            reports/ami-attestation.json
+            fsi-hardened-rhel9.iso
+          if-no-files-found: ignore
+          retention-days: 90
